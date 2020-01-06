@@ -17,7 +17,7 @@ import scipy.io as scio
 from keras.utils import to_categorical
 from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, EarlyStopping,TensorBoard
 import datetime
-def main():
+def train_main():
     n_data = 50000
     n_inp_dim = 1024
     n_hid_dim = 10
@@ -86,6 +86,14 @@ def main():
     scores = model.evaluate(test_x, test_y, verbose=1)
     print('Test loss:', scores[0])
     print('Test accuracy:', scores[1])
+   
+def train_sub():
+    
+    
+def main():
+    train_main()
+    train_sub()
+    
     
 if __name__ == '__main__':
     main()
