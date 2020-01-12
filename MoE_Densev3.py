@@ -1,13 +1,9 @@
 #!/usr/bin/env python
 # encoding: utf-8
-
-
-
-
+# -*- coding: utf-8 -*-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-
 from datetime import datetime
 import io
 import itertools
@@ -23,7 +19,7 @@ import scipy.io as scio
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, EarlyStopping,TensorBoard
 import matplotlib.pyplot as plt
-
+import pickle
 import sklearn.metrics
 mnist = tf.keras.datasets.mnist
 print("TensorFlow version: ", tf.__version__)
@@ -70,21 +66,32 @@ def sub_train(selector,ind_s,ind_exp,num_exp,num_class):
     
     ind_train=ind_s[0]
     ind_test=ind_s[1]
-    train_x = scio.loadmat(r'C:\Users\wzs\Desktop\DFCN\data_feature_train.mat')['train']
-    test_x = scio.loadmat(r'C:\Users\wzs\Desktop\DFCN\data_feature_test.mat')['test']
-    f = h5py.File(r'C:\Users\wzs\Desktop\DFCN\train_dataset.h5','r')                             
-    train_y_orig = f['train_labels'][:] 
-    train_y=to_categorical(train_y_orig) 
-    f = h5py.File(r'C:\Users\wzs\Desktop\DFCN\test_dataset.h5','r')                            
-    test_y_orig = f['test_labels'][:] 
-    test_y=to_categorical(test_y_orig)
-
+    # train_x = scio.loadmat(r'C:\Users\wzs\Desktop\DFCN\data_feature_train.mat')['train']
+    # test_x = scio.loadmat(r'C:\Users\wzs\Desktop\DFCN\data_feature_test.mat')['test']
+    fashion_mnist = keras.datasets.fashion_mnist
+    (train_images, train_labels), (test_images, test_labels) = \
+        fashion_mnist.load_data()
+    train_x, test_x = train_images / 255.0, test_images / 255.0
+    # f = h5py.File(r'C:\Users\wzs\Desktop\DFCN\train_dataset.h5','r')                             
+    # train_y_orig = f['train_labels'][:] 
+    # train_y=to_categorical(train_y_orig) 
+    # f = h5py.File(r'C:\Users\wzs\Desktop\DFCN\test_dataset.h5','r')                            
+    # test_y_orig = f['test_labels'][:] 
+    # test_y=to_categorical(test_y_orig)
+    test_y=test_labels
+    train_y=train_labels
+    test_y=to_categorical(test_y)
+    train_y=to_categorical(train_y)
 ## make model
-    input_shape = train_x.shape[1:]
-    inputs = Input(shape=input_shape)
+    
+    
 #preprocess inputs(clip the label y)
     train_x=train_x[ind_train,:]
+    train_x.shape=[train_x.shape[1],28,28]
+    input_shape = [train_x.shape[0],28,28]
+    inputs = Input(shape=input_shape)
     test_x=test_x[ind_test,:]
+    test_x.shape=[test_x.shape[1],28,28]
     train_y=train_y[ind_train,:]
     train_y=train_y.reshape(train_y.shape[1],train_y.shape[2])
     test_y=test_y[ind_test,:]
@@ -97,11 +104,17 @@ def sub_train(selector,ind_s,ind_exp,num_exp,num_class):
     train_y=train_y@selec_convertor
     test_y=test_y@selec_convertor 
 
-    n_hidden=100
+    n_hidden=32
     n_out = num_class
-    hidden1 = Dense(n_out, activation='softmax',kernel_initializer='RandomUniform')(inputs)
+    # hidden1 = Dense(n_out, activation='sigmoid',kernel_initializer='RandomUniform')(inputs)
     # hidden2=Dense(n_out, activation='softmax',kernel_initializer='RandomUniform')(hidden1)
-    model = Model(inputs=inputs, outputs=hidden1)
+    # model = Model(inputs=inputs, outputs=hidden1)
+    model = keras.models.Sequential([
+        keras.layers.Flatten(input_shape=(28, 28)),
+        keras.layers.Dense(n_hidden, activation='relu'),
+        keras.layers.Dropout(rate=0.3),
+        keras.layers.Dense(n_out, activation='sigmoid')
+    ])
     model.summary()
 #    log_dir=".\logs\fit\" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 #    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
@@ -118,7 +131,6 @@ def sub_train(selector,ind_s,ind_exp,num_exp,num_class):
     opt = keras.optimizers.SGD(lr=1e-4, decay=0)
     # model.load_weights("weights/subs/sub"+str(i)+".h5")
     # print("Model loaded.")
-
     lr_reducer= ReduceLROnPlateau(monitor='val_loss', factor=np.sqrt(0.1),
                                       cooldown=0, patience=10, min_lr=0.5e-6)
     early_stopper= EarlyStopping(monitor='val_acc', min_delta=0.0001, patience=20)
@@ -131,40 +143,83 @@ def sub_train(selector,ind_s,ind_exp,num_exp,num_class):
                   optimizer=opt,
                   metrics=['accuracy'])
     
-    train_x = train_x.astype('float32').reshape(train_x.shape[1],train_x.shape[2])
-    test_x = test_x.astype('float32').reshape(test_x.shape[1],test_x.shape[2])
+    # train_x = train_x.astype('float32').reshape(train_x.shape[1],train_x.shape[2])
+    # test_x = test_x.astype('float32').reshape(test_x.shape[1],test_x.shape[2])
     hist = model.fit(train_x[:,:], train_y,
           batch_size=32,
           callbacks=callbacks,
-          epochs=5,
-          verbose=0,
+          epochs=50,
+          verbose=1,
           validation_data=(test_x[:,:], test_y),
           shuffle=True)
     ## Score trained model.
     scores = model.evaluate(test_x, test_y, verbose=0)
     print('Test loss:', scores[0])
     print('Test accuracy:', scores[1])
-    
 def main_eval():
     #eval the main model to get num_catch
+    num_exp=5
     model= tf.keras.models.load_model(r'./weights/main2.h5')
     fashion_mnist = keras.datasets.fashion_mnist
     (train_images, train_labels), (test_images, test_labels) = \
         fashion_mnist.load_data()
+    test_y=tf.keras.utils.to_categorical(test_labels)
+    train_images, test_images = train_images / 255.0, test_images / 255.0
     data=test_images
     # data = scio.loadmat(r'C:\Users\wzs\Desktop\DFCN\data_feature_train.mat')['train']
     # data.shape=[data.shape[0],28,28]
- 
+    selector = scio.loadmat(r'./data/selector.mat')['selector']
 # feature extraction
     layer_1 = tf.keras.backend.function([model.input], [model.output])
     num_catch=np.zeros(([data.shape[0],10]))
-    for i in range(data.shape[0]):
-        
+    count=0
+    count2=0
+    sele_dic={}
+    '''dic---------------
+        pred_labs------
+            true_labs--'''
+    for i in range(int(data.shape[0]/1)):
         f1 = layer_1([data[i,:].reshape(1,28*28)])[0]
-        if i%100==0:
-            print(i)
-        num_catch[i,:]=f1#record the num
-    scio.savemat('./data/num_catch.mat', {'num_catch':num_catch})
+        if np.argmax(test_y[i,:])!=np.argmax(f1):
+            for j in range(num_exp):
+                sel_mems=np.nonzero(selector[j,:])[0]
+                if np.argmax(f1) in sel_mems:
+                    if not np.argmax(f1) in sele_dic.keys():
+                        sele_dic[np.argmax(f1)]={}
+                        
+                    if not np.argmax(test_y[i,:]) in sele_dic[np.argmax(f1)].keys():
+                        sele_dic[np.argmax(f1)][np.argmax(test_y[i,:])]=[]
+                    # print(np.argmax(f1))
+                    # print(np.argmax(test_y[i,:]))
+                    f2=np.sort(f1)[:,-2]
+                    sele_dic[np.argmax(f1)][np.argmax(test_y[i,:])].append(f2/np.max(f1))
+                    
+    sele_dic_dis_mean={}
+    sele_dic_dis_var={}
+    for pred_labs in sele_dic:
+        for true_labs in sele_dic[pred_labs]:
+            if not pred_labs in sele_dic_dis_mean.keys():
+                sele_dic_dis_mean[pred_labs]={}
+                sele_dic_dis_var[pred_labs]={}
+            sele_dic_dis_mean[pred_labs][true_labs]=np.mean(sele_dic[pred_labs][true_labs])
+            sele_dic_dis_var[pred_labs][true_labs]=np.var(sele_dic[pred_labs][true_labs])
+    sele_dis=[sele_dic_dis_mean,sele_dic_dis_var]
+    with open("./data/sele_dis.pkl", 'wb') as f:
+        pickle.dump(sele_dis, f)
+    #         count=count+1
+    #         print(str(i)+":\n")
+    #         # print(f1)
+    #         f1[:,np.argmax(f1)]=0
+    #         print(np.argmax(f1))
+    #         print(" ")
+    #         print(np.argmax(test_y[i,:]))
+    #         print("\n")
+    #         if np.argmax(f1)==np.argmax(test_y[i,:]):
+    #             count2=count2+1
+    # print("wrong ans:"+str(count)+"\n")
+    # print("wrong matches:"+str(count2)+"\n")
+        # num_catch[i,:]=f1#record the num
+    # scio.savemat('./data/num_catch.mat', {'num_catch':num_catch})
     # Download the data. The data is already divided into train and test.
 
 
@@ -225,12 +280,13 @@ def train_main():
     fashion_mnist = keras.datasets.fashion_mnist
     (train_images, train_labels), (test_images, test_labels) = \
         fashion_mnist.load_data()
+    train_images, test_images = train_images / 255.0, test_images / 255.0
     # train_images=train_images[0:20]
     # train_labels=train_labels[0:20]
     class_names = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat', 
         'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot']
     # (train_images, train_labels), (test_images, test_labels) = mnist.load_data()
-    train_images, test_images = train_images / 255.0, test_images / 255.0
+    
     # train_x = scio.loadmat(r'C:\Users\wzs\Desktop\DFCN\data_feature_train.mat')['train']
     # test_x = scio.loadmat(r'C:\Users\wzs\Desktop\DFCN\data_feature_test.mat')['test']
     # train_images=train_x
@@ -246,7 +302,7 @@ def train_main():
     model = keras.models.Sequential([
         keras.layers.Flatten(input_shape=(28, 28)),
         # keras.layers.Dense(32, activation='relu'),
-        keras.layers.Dense(10, activation='softmax')
+        keras.layers.Dense(10, activation='sigmoid')
     ])
     
     model.compile(
@@ -254,6 +310,7 @@ def train_main():
         loss='sparse_categorical_crossentropy',
         metrics=['accuracy']
     )
+    
     def log_confusion_matrix(epoch, logs):
         # Use the model to predict the values from the validation dataset.
         test_pred_raw = model.predict(test_images)
@@ -289,9 +346,11 @@ def train_main():
         callbacks=[tensorboard_callback, cm_callback,model_checkpoint],
         validation_data=(test_images, test_labels),
     )
+    
 def evaluate():
     selector = scio.loadmat(r'./data/selector.mat')['selector']
     num_exp=5
+    num_class=2
     model= tf.keras.models.load_model(r'./weights/main2.h5')
     sub_models=[]
     for i in range(num_exp):
@@ -300,16 +359,47 @@ def evaluate():
     (train_images, train_labels), (test_images, test_labels) = \
         fashion_mnist.load_data()
     data=test_images
+    test_y=tf.keras.utils.to_categorical(test_labels)
     layer_1 = tf.keras.backend.function([model.input], [model.output])
     num_catch=np.zeros(([data.shape[0],10]))
+    with open("./data/sele_dis.pkl", "rb") as f:
+        sele_dis = pickle.load(f)
+    sele_dic_dis_mean=sele_dis[0]
+    sele_dic_dis_var=sele_dis[1]
+    
+
+    # main-------------------------------------------
+    count=0
     for i in range(data.shape[0]):
         f1 = layer_1([data[i,:].reshape(1,28*28)])[0]
-        # num_catch[i,:]=f1#record the num
-        if :
-            
+        pred_lab=np.argmax(f1)
+        pred_prob_f2=np.sort(f1)[:,-2]/np.max(f1)
+        for j in range(num_exp):
+            sel_mems=np.nonzero(selector[j,:])[0]
+            if np.argmax(f1) in sel_mems:
+                ind=int(not(np.where(sel_mems==np.argmax(f1))[0][0]))
+                true_lab=sel_mems[ind]
+                if pred_prob_f2>sele_dic_dis_mean[pred_lab][true_lab]+sele_dic_dis_var[pred_lab][true_lab]:
+                    sub_model=sub_models[j]
+                    layer_sub = tf.keras.backend.function([sub_model.input], [sub_model.output])
+                    f1_sub = layer_sub([data[i,:].reshape(1,28*28)])[0]
+                    
+                    selec_convertor=np.zeros(([10,num_class]))#transfer 10 to 2 classes
+                    for i in range(num_class):
+                        tem=np.nonzero(selector[j,:])[0]
+                        selec_convertor[tem[i],i]=1 
+                    f1_sub=f1_sub@selec_convertor.T
+                    
+                    pred_lab=np.argmax(f1_sub)
+                    
+        if pred_lab==np.argmax(test_y[i,:]):
+                count=count+1
+                
+    print("wrong ans:"+str(count/10000)+"\n")
 def main():
     # train_main()
     train_subs()
-    # evaluate()
+    # main_eval()
+    evaluate()
 if __name__ == '__main__':
     main()
