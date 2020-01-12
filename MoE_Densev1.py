@@ -88,7 +88,7 @@ def train_main():
     print('Test accuracy:', scores[1])
    
 def train_sub():
-    
+    pass
     
 def main():
     train_main()
