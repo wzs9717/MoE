@@ -25,6 +25,44 @@ mnist = tf.keras.datasets.mnist
 print("TensorFlow version: ", tf.__version__)
 assert version.parse(tf.__version__).release[0] >= 2, \
     "This notebook requires TensorFlow 2.0 or above."
+    
+def tinyCNN():
+    import tensorflow.keras.layers as K
+    classes=2
+    chanDim=-1#TF BK
+    inputShape=(28, 28, 1)
+    model = tf.keras.Sequential()
+    model.add(K.Conv2D(32, (3, 3), padding="same",
+    			input_shape=inputShape))
+    model.add(K.Activation("relu"))
+    model.add(K.BatchNormalization(axis=chanDim))
+    model.add(K.Conv2D(32, (3, 3), padding="same"))
+    model.add(K.Activation("relu"))
+    model.add(K.BatchNormalization(axis=chanDim))
+    model.add(K.MaxPooling2D(pool_size=(2, 2)))
+    model.add(K.Dropout(0.25))
+    
+    # second CONV => RELU => CONV => RELU => POOL layer set
+    model.add(K.Conv2D(64, (3, 3), padding="same"))
+    model.add(K.Activation("relu"))
+    model.add(K.BatchNormalization(axis=chanDim))
+    model.add(K.Conv2D(64, (3, 3), padding="same"))
+    model.add(K.Activation("relu"))
+    model.add(K.BatchNormalization(axis=chanDim))
+    model.add(K.MaxPooling2D(pool_size=(2, 2)))
+    model.add(K.Dropout(0.25))
+    
+    # first (and only) set of FC => RELU layers
+    model.add(K.Flatten())
+    model.add(K.Dense(512))
+    model.add(K.Activation("relu"))
+    model.add(K.BatchNormalization())
+    model.add(K.Dropout(0.5))
+    
+    # softmax classifier
+    model.add(K.Dense(classes,name="new_Dense"))
+    model.add(K.Activation("softmax",name="new_softmax"))
+    return model
 def train_subs():
     
     num_exp=5
@@ -43,16 +81,15 @@ def train_subs():
     selector=selector.T
     print(selector)
 #load data
-    f = h5py.File(r'C:\Users\wzs\Desktop\DFCN\train_dataset.h5','r')                             
-    train_y_orig = f['train_labels'][:] 
-    train_y=to_categorical(train_y_orig) 
-    f = h5py.File(r'C:\Users\wzs\Desktop\DFCN\test_dataset.h5','r')
-    test_y_orig = f['test_labels'][:] 
-    test_y=to_categorical(test_y_orig)
+    fashion_mnist = keras.datasets.fashion_mnist
+    (train_images, train_labels), (test_images, test_labels) = \
+        fashion_mnist.load_data()
+    test_y=to_categorical(test_labels)
+    train_y=to_categorical(train_labels)
     
 #train sub models
     dic_sub ={}
-    for i in range(selector.shape[0]):
+    for i in range(1):#change selector.shape[0]
         print(i)
         ind_train=selector[i,:]@train_y.T
         ind_test=selector[i,:]@test_y.T
@@ -71,7 +108,8 @@ def sub_train(selector,ind_s,ind_exp,num_exp,num_class):
     fashion_mnist = keras.datasets.fashion_mnist
     (train_images, train_labels), (test_images, test_labels) = \
         fashion_mnist.load_data()
-    train_x, test_x = train_images / 255.0, test_images / 255.0
+    train_x = train_images.reshape([-1,28,28,1]) / 255.0
+    test_x = test_images.reshape([-1,28,28,1]) / 255.0
     # f = h5py.File(r'C:\Users\wzs\Desktop\DFCN\train_dataset.h5','r')                             
     # train_y_orig = f['train_labels'][:] 
     # train_y=to_categorical(train_y_orig) 
@@ -86,12 +124,12 @@ def sub_train(selector,ind_s,ind_exp,num_exp,num_class):
     
     
 #preprocess inputs(clip the label y)
-    train_x=train_x[ind_train,:]
-    train_x.shape=[train_x.shape[1],28,28]
-    input_shape = [train_x.shape[0],28,28]
-    inputs = Input(shape=input_shape)
-    test_x=test_x[ind_test,:]
-    test_x.shape=[test_x.shape[1],28,28]
+    train_x=train_x[ind_train,:,:,:]
+    train_x.shape=[train_x.shape[1],28,28,1]
+    # input_shape = [train_x.shape[0],28,28]
+    # inputs = Input(shape=input_shape)
+    test_x=test_x[ind_test,:,:,:]
+    test_x.shape=[test_x.shape[1],28,28,1]
     train_y=train_y[ind_train,:]
     train_y=train_y.reshape(train_y.shape[1],train_y.shape[2])
     test_y=test_y[ind_test,:]
@@ -103,19 +141,23 @@ def sub_train(selector,ind_s,ind_exp,num_exp,num_class):
         selec_convertor[tem[i],i]=1 
     train_y=train_y@selec_convertor
     test_y=test_y@selec_convertor 
-
-    n_hidden=32
-    n_out = num_class
-    # hidden1 = Dense(n_out, activation='sigmoid',kernel_initializer='RandomUniform')(inputs)
-    # hidden2=Dense(n_out, activation='softmax',kernel_initializer='RandomUniform')(hidden1)
-    # model = Model(inputs=inputs, outputs=hidden1)
-    model = keras.models.Sequential([
-        keras.layers.Flatten(input_shape=(28, 28)),
-        keras.layers.Dense(n_hidden, activation='relu'),
-        keras.layers.Dropout(rate=0.3),
-        keras.layers.Dense(n_out, activation='sigmoid')
-    ])
-    model.summary()
+    model=tinyCNN()
+    
+    # n_hidden=32
+    # n_out = num_class
+    # # hidden1 = Dense(n_out, activation='sigmoid',kernel_initializer='RandomUniform')(inputs)
+    # # hidden2=Dense(n_out, activation='softmax',kernel_initializer='RandomUniform')(hidden1)
+    # # model = Model(inputs=inputs, outputs=hidden1)
+    # model = keras.models.Sequential([
+    #     keras.layers.Flatten(input_shape=(28, 28)),
+    #     keras.layers.Dense(n_hidden, activation='relu'),
+    #     # keras.layers.Dropout(rate=0.3),
+    #     keras.layers.Dense(n_out, activation='sigmoid')
+    # ])
+    # model.summary()
+    # model= tf.keras.models.load_model("./weights/subs/sub"+str(ind_exp)+".h5")
+    # model.load_weights("./weights/subs/sub"+str(i)+".h5")
+    # print("Model loaded.")
 #    log_dir=".\logs\fit\" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 #    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
     tbCallBack = TensorBoard(log_dir='.\logs', 
@@ -128,34 +170,67 @@ def sub_train(selector,ind_s,ind_exp,num_exp,num_class):
                  embeddings_layer_names=None, 
                  embeddings_metadata=None)
     ##train model
-    opt = keras.optimizers.SGD(lr=1e-4, decay=0)
-    # model.load_weights("weights/subs/sub"+str(i)+".h5")
-    # print("Model loaded.")
-    lr_reducer= ReduceLROnPlateau(monitor='val_loss', factor=np.sqrt(0.1),
-                                      cooldown=0, patience=10, min_lr=0.5e-6)
-    early_stopper= EarlyStopping(monitor='val_acc', min_delta=0.0001, patience=20)
-    print("save to "+str(ind_exp))
-    model_checkpoint= ModelCheckpoint("./weights/subs/sub"+str(ind_exp)+".h5", monitor="val_acc", save_best_only=False,
-                                    save_weights_only=False)
-    callbacks=[early_stopper, model_checkpoint, tbCallBack]
-
-    model.compile(loss='categorical_crossentropy',
-                  optimizer=opt,
+    print(model.summary())
+    model.load_weights("./weights/fashion_minist3.h5",by_name=True)
+    # lr = 0.001
+    epochs = 10
+    checkpoint = keras.callbacks.ModelCheckpoint("./weights/subs/sub"+str(ind_exp)+".h5",
+                verbose=0,
+                save_best_only=True,
+                monitor="val_accuracy",
+                mode='max',
+                save_weights_only=True
+            )
+    opt = tf.keras.optimizers.Adam(lr=1e-4, decay=0)
+    
+    # for i in range(1, 15):
+    #     model.layers[i].trainable = False
+        
+    # 编译模型
+    model.compile(optimizer=opt,
+                  loss='categorical_crossentropy',
                   metrics=['accuracy'])
+     
+    # 拟合数据
+    model.fit(x=train_x, y=train_y,
+    epochs=epochs,
+    validation_data=(test_x, test_y),
+    batch_size=16,
+    callbacks=[ checkpoint],
+    shuffle=True
+    )
+
+    # 模型评测
+    test_loss, test_acc = model.evaluate(test_x, test_y,verbose=0)
+ 
+    print('the model\'s test_loss is {} and test_acc is {}'.format(test_loss, test_acc))
+    # opt = keras.optimizers.Adam(lr=1e-5, decay=0)
+    # lr_reducer= ReduceLROnPlateau(monitor='val_loss', factor=np.sqrt(0.1),
+    #                                   cooldown=0, patience=10, min_lr=0.5e-6)
+    # early_stopper= EarlyStopping(monitor='val_acc', min_delta=0.0001, patience=20)
+    # print("save to "+str(ind_exp))
+    # model_checkpoint= ModelCheckpoint("./weights/subs/sub"+str(ind_exp)+".h5", monitor="val_accuracy", save_best_only=True,
+                                    # save_weights_only=False)
+    # callbacks=[ model_checkpoint, tbCallBack]
+
+    # model.compile(loss='categorical_crossentropy',
+    #               optimizer=opt,
+    #               metrics=['accuracy'])
     
     # train_x = train_x.astype('float32').reshape(train_x.shape[1],train_x.shape[2])
     # test_x = test_x.astype('float32').reshape(test_x.shape[1],test_x.shape[2])
-    hist = model.fit(train_x[:,:], train_y,
-          batch_size=32,
-          callbacks=callbacks,
-          epochs=50,
-          verbose=1,
-          validation_data=(test_x[:,:], test_y),
-          shuffle=True)
-    ## Score trained model.
-    scores = model.evaluate(test_x, test_y, verbose=0)
-    print('Test loss:', scores[0])
-    print('Test accuracy:', scores[1])
+    # hist = model.fit(train_x[:,:], train_y,
+    #       batch_size=8,
+    #       callbacks=[ model_checkpoint, tbCallBack],
+    #       epochs=50,
+    #       verbose=1,
+    #       validation_data=(test_x[:,:], test_y),
+    #       shuffle=True)
+    # ## Score trained model.
+    # scores = model.evaluate(test_x, test_y, verbose=0)
+    # print('Test loss:', scores[0])
+    # print('Test accuracy:', scores[1])
+    
 def main_eval():
     #eval the main model to get num_catch
     num_exp=5
@@ -400,6 +475,6 @@ def main():
     # train_main()
     train_subs()
     # main_eval()
-    evaluate()
+    # evaluate()
 if __name__ == '__main__':
     main()
