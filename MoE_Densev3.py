@@ -21,13 +21,14 @@ from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, Early
 import matplotlib.pyplot as plt
 import pickle
 import sklearn.metrics
+import tensorflow.keras.layers as K
 mnist = tf.keras.datasets.mnist
 print("TensorFlow version: ", tf.__version__)
 assert version.parse(tf.__version__).release[0] >= 2, \
     "This notebook requires TensorFlow 2.0 or above."
     
 def tinyCNN():
-    import tensorflow.keras.layers as K
+    
     classes=10
     chanDim=-1#TF BK
     inputShape=(28, 28, 1)
@@ -99,13 +100,13 @@ def train_subs(num_exp=10):
     
 #train sub models
     dic_sub ={}
-    for i in range(selector.shape[0]):#change selector.shape[0]
+    for i in range(5,selector.shape[0]):#change selector.shape[0]
         print(i)
         ind_train=selector[i,:]@train_y.T
         ind_test=selector[i,:]@test_y.T
         ind_s=[np.nonzero(ind_train!=0),np.nonzero(ind_test!=0)]#get ind_s
         
-        # sub_train(selector[i,:],ind_s,i,num_exp,num_class)
+        sub_train(selector[i,:],ind_s,i,num_exp,num_class)
     scio.savemat('./data/selector.mat', {'selector':selector})
 
 def sub_train(selector,ind_s,ind_exp,num_exp,num_class):
@@ -116,34 +117,38 @@ def sub_train(selector,ind_s,ind_exp,num_exp,num_class):
     fashion_mnist = keras.datasets.fashion_mnist
     (train_images, train_labels), (test_images, test_labels) = \
         fashion_mnist.load_data()
-    train_x = train_images.reshape([-1,28,28,1]) / 255.0
-    test_x = test_images.reshape([-1,28,28,1]) / 255.0
+    train_x_tem = train_images.reshape([-1,28,28,1]) / 255.0
+    test_x_tem = test_images.reshape([-1,28,28,1]) / 255.0
     test_y=test_labels
     train_y=train_labels
-    test_y=to_categorical(test_y)
-    train_y=to_categorical(train_y)
+    test_y_tem=to_categorical(test_y)
+    train_y_tem=to_categorical(train_y)
 ## make model
     
     
 #preprocess inputs(clip the label y)
-    train_x=train_x[ind_train,:,:,:]
-    train_x.shape=[train_x.shape[1],28,28,1]
-    # input_shape = [train_x.shape[0],28,28]
-    # inputs = Input(shape=input_shape)
-    test_x=test_x[ind_test,:,:,:]
-    test_x.shape=[test_x.shape[1],28,28,1]
-    train_y=train_y[ind_train,:]
-    train_y=train_y.reshape(train_y.shape[1],train_y.shape[2])
-    test_y=test_y[ind_test,:]
-    test_y=test_y.reshape(test_y.shape[1],test_y.shape[2])
+    train_x=train_x_tem[ind_train,:,:,:]
+    train_x=np.concatenate((train_x.reshape(train_x.shape[1],28,28,1),train_x_tem[0:10000,:,:,:]),axis=0)
+    # train_x.shape=[train_x.shape[1],28,28,1]
+    test_x=test_x_tem[ind_test,:,:,:]
+    test_x=np.concatenate((test_x.reshape(test_x.shape[1],28,28,1),test_x_tem[0:10000,:,:,:]),axis=0)
+    # test_x.shape=[test_x.shape[1],28,28,1]
     
-    selec_convertor=np.zeros(([train_y.shape[1],num_class]))
-    for i in range(num_class):
-        tem=np.nonzero(selector)[0]
-        selec_convertor[tem[i],i]=1 
-    train_y=train_y@selec_convertor
-    test_y=test_y@selec_convertor 
-    model=tinyCNN()
+    train_y=train_y_tem[ind_train,:]
+    train_y=np.concatenate((train_y.reshape(train_y.shape[1],train_y.shape[2]),train_y_tem[0:10000,:]),axis=0)
+    # train_y=train_y.reshape(train_y.shape[1],train_y.shape[2])
+    test_y=test_y_tem[ind_test,:]
+    test_y=np.concatenate((test_y.reshape(test_y.shape[1],test_y.shape[2]),test_y_tem[0:10000,:]),axis=0)
+    # test_y=test_y.reshape(test_y.shape[1],test_y.shape[2])
+
+    # selec_convertor=np.zeros(([train_y.shape[1],num_class]))
+    # for i in range(num_class):
+    #     tem=np.nonzero(selector)[0]
+    #     selec_convertor[tem[i],i]=1 
+    # train_y=train_y@selec_convertor
+    # test_y=test_y@selec_convertor 
+    
+    # model=tinyCNN()
     tbCallBack = TensorBoard(log_dir='.\logs', 
                  histogram_freq=0,
 #                  batch_size=32,     
@@ -155,38 +160,50 @@ def sub_train(selector,ind_s,ind_exp,num_exp,num_class):
                  embeddings_metadata=None)
     ##train model
     # print(model.summary())
-    model.load_weights("./weights/subs/sub"+str(ind_exp)+".h5",by_name=False)
-    # lr = 0.001
-    epochs = 1
+    model=tf.keras.models.load_model("./weights/fashion_minist3.h5")
+    layer_main = tf.keras.backend.function([model.layers[0].input], [model.get_layer('dropout_2').output])
+    train_x_ch=np.zeros(([train_x.shape[0],512]))
+    for i in range(train_x.shape[0]):
+        f1= layer_main([train_x[i,:,:,:].reshape(1,28,28,1)])[0]
+        train_x_ch[i,:]=f1
+    test_x_ch=np.zeros(([test_x.shape[0],512]))
+    for i in range(test_x.shape[0]):
+        f1= layer_main([test_x[i,:,:,:].reshape(1,28,28,1)])[0]
+        test_x_ch[i,:]=f1
+    model = tf.keras.Sequential()
+    model.add(K.Dense(10,input_shape=(512,)))
+    model.add(K.Activation("softmax"))
+    # print(train_x_ch.shape)
+    epochs = 20
     checkpoint = keras.callbacks.ModelCheckpoint("./weights/subs/sub"+str(ind_exp)+".h5",
                 verbose=0,
-                save_best_only=False,
+                save_best_only=True,
                 monitor="val_accuracy",
                 mode='max',
                 save_weights_only=False
             )
-    opt = tf.keras.optimizers.Adam(lr=1e-9, decay=0)
+    opt = tf.keras.optimizers.Adam(lr=2e-4, decay=1e-7)
     
-    # for i in range(21):
-    #     model.layers[i].trainable = False
+    # # for i in range(21):
+    # #     model.layers[i].trainable = False
         
-    # 编译模型
+    # # 编译模型
     model.compile(optimizer=opt,
                   loss='categorical_crossentropy',
                   metrics=['accuracy'])
      
     # 拟合数据
-    # model.fit(x=train_x, y=train_y,
-    # epochs=epochs,
-    # validation_data=(test_x, test_y),
-    # batch_size=512,
-    # callbacks=[ checkpoint],
-    # shuffle=True
-    # )
+    model.fit(x=train_x_ch, y=train_y,
+    epochs=epochs,
+    validation_data=(test_x_ch, test_y),
+    batch_size=32,
+    callbacks=[ checkpoint],
+    shuffle=True
+    )
 
     # 模型评测
-    test_loss, test_acc = model.evaluate(test_x, test_y,verbose=0)
-    result=model.predict(test_x[1,:,:,:].reshape([1,28,28,1]))
+    test_loss, test_acc = model.evaluate(test_x_ch, test_y,verbose=0)
+    result=model.predict(test_x_ch[1,:].reshape([1,512]))
     print("result is:"+str(np.argmax(result)))
     print('the model\'s test_loss is {} and test_acc is {}'.format(test_loss, test_acc))
 def main_eval_pred_true(num_exp=10):
@@ -503,15 +520,17 @@ def train_main():
         validation_data=(test_images, test_labels),
     )
     
-def evaluate(num_exp=10):
-    threshold=0
+def evaluate(num_exp,threshold):
+    # threshold=2
+    print("threshold="+str(threshold))
+    
     selector = scio.loadmat(r'./data/selector.mat')['selector']
     num_class=2
     model= tf.keras.models.load_model(r'./weights/main2.h5')
     sub_models=[]
     for i in range(num_exp):
-        print(i)
-        # sub_models.append(tf.keras.models.load_model('./weights/subs/sub'+str(i)+'.h5'))
+        # print(i)
+        sub_models.append(tf.keras.models.load_model('./weights/subs/sub'+str(i)+'.h5'))
     fashion_mnist = keras.datasets.fashion_mnist
     (train_images, train_labels), (test_images, test_labels) = \
         fashion_mnist.load_data()
@@ -542,6 +561,8 @@ def evaluate(num_exp=10):
     count2=0
     count3=0
     sub_model=tf.keras.models.load_model('./weights/fashion_minist3.h5')
+    # sub_model.summary()
+    layer_sub = tf.keras.backend.function([sub_model.input], [sub_model.get_layer('dropout_2').output])
     for i in range(int(data.shape[0])):
         f1 = layer_1([data[i,:].reshape(1,28*28)])[0]
         f1=f1/np.sum(f1)
@@ -567,11 +588,11 @@ def evaluate(num_exp=10):
             selec_choos[np.nonzero(selec_choos)]=1
             # if pred_prob_f1<(right_mean[pred_lab][pred_lab]+wrong_mean[pred_lab][pred_lab])/2:
             # if pred_prob_f2>(pred_true_mean[pred_lab][true_lab]+4*pred_true_var[pred_lab][true_lab]-1):
-            # sum_f=0
-            print("not sure:"+str(i))
+            sum_f=0
+            # print("not sure:"+str(i))
             count1=count1+1
-            print("true_label:"+str(np.argmax(test_y[i,:])))
-            print("pred_lab:"+str(pred_lab)+",pred_lab2:"+str(pred_lab2[0]))
+            # print("true_label:"+str(np.argmax(test_y[i,:])))
+            # print("pred_lab:"+str(pred_lab)+",pred_lab2:"+str(pred_lab2[0]))
             if np.argmax(test_y[i,:]) in np.nonzero(selec_choos)[0]:
                 count2=count2+1
             # if i<9000:
@@ -580,19 +601,24 @@ def evaluate(num_exp=10):
             #     sum_f=0
             # sub_model=sub_models[j]
             
-            layer_sub = tf.keras.backend.function([sub_model.input], [sub_model.output])
-            f1_sub = layer_sub([data[i,:].reshape([-1,28,28,1])])[0]
-            
+            # layer_sub = tf.keras.backend.function([sub_model.input], [sub_model.get_layer('dropout_2').output])
+            f1_tem = layer_sub([data[i,:].reshape([-1,28,28,1])])[0]
+            f1_tem2=f1_tem.reshape([1,512])
             # selec_convertor=np.zeros(([10,num_class]))#transfer 10 to 2 classes
             # for i in range(num_class):
             #     tem=np.nonzero(selector[j,:])[0]
             #     selec_convertor[tem[i],i]=1 
             # f1_sub=f1_sub@selec_convertor.T
-                
-                
+            for j in range(num_exp):    
+                if np.nonzero(selector[j,:])[0][0] in np.nonzero(selec_choos)[0] and \
+                np.nonzero(selector[j,:])[0][1] in np.nonzero(selec_choos)[0]:
+                    model_sub2=sub_models[j]
+                    layer_sub2=tf.keras.backend.function([model_sub2.input], [model_sub2.output])
+                    f1_sub = layer_sub2([f1_tem2])[0]
+                    sum_f=sum_f+f1_sub
             # f1_sub=f1_sub/np.sum(f1_sub)
-            f1_sub=f1_sub*selec_choos
-            sum_f=f1_sub
+            # f1_sub=f1_sub*selec_choos
+            # sum_f=f1_sub
             # if np.argmax(sum_f)==np.argmax(test_y[i,:]):
             #     count3=count3+1
                 # print("true:"+str(count3/count2))
@@ -600,18 +626,20 @@ def evaluate(num_exp=10):
         if pred_lab==np.argmax(test_y[i,:]):
                 count=count+1
                 
-    print("right ans:"+str(count/10000))#0.8335->->0.87(5)->0.884(10)
+    print("right ans:"+str(count/10000))#0.8335->->0.88(5)->0.884(10)
     print("use experts:"+str(count1))
     print("right predict into range:"+str(count2/count1))
     
 def main():
-    num_exp=5
+    num_exp=10
+    para=[-1,16]#threshold
     # train_main()
     # train_subs(num_exp)
     # main_eval_pred_true(num_exp)
     # main_eval_right(num_exp)
     # main_eval_wrong(num_exp)
-    evaluate(num_exp)
+    for i in para:
+        evaluate(num_exp,i)
     
 if __name__ == '__main__':
     main()
